@@ -21,11 +21,13 @@ The LSP that powers language features is [FSAutoComplete](https://github.com/fsh
 
 The library that powers project and script loading is [proj-info](https://github.com/ionide/proj-info)
 
+You find a version of this plugin pre-packaged with the FOSS debugger from Samsung [here](https://open-vsx.org/extension/Ionide/Ionide-fsharp)
+
 # Requirements
 
 * .NET 6.0/7.0 SDK - https://dotnet.microsoft.com/download/dotnet/7.0
 
-* VS Code C# plugin - Ionide's debugging capabilities relies on the debugger provided by Omnisharp team. 
+* VS Code C# plugin - Ionide's debugging capabilities rely on either the [Omnisharp](https://github.com/OmniSharp/omnisharp-vscode) debugger or [netcoredbg](https://github.com/muhammadsammy/free-omnisharp-vscode).
 
 ## Features
 
@@ -96,7 +98,7 @@ The library is available under [MIT license](https://github.com/ionide/ionide-vs
 
 ## Our Sponsors
 
-Ionide couldn't be created without the support of [Lambda Factory](https://lambdafactory.io). If your company would be interested in supporting development of Ionide, or acquiring commercial support send us an email - lambda_factory@outlook.com.
+Ionide couldn't be created without the support of [Lambda Factory](https://lambdafactory.pl). If your company would be interested in supporting development of Ionide, or acquiring commercial support send us an email - lambda_factory@outlook.com.
 
 You can also support Ionide development on [Open Collective](https://opencollective.com/ionide). 
 
@@ -104,7 +106,7 @@ You can also support Ionide development on [Open Collective](https://opencollect
 
 <div align="center">
 
-<a href="https://lambdafactory.io"><img src="https://cdn-images-1.medium.com/max/332/1*la7_YvDFvrtA720P5bYWBQ@2x.png" alt="drawing" width="100"/></a>
+<a href="https://lambdafactory.pl"><img src="https://cdn-images-1.medium.com/max/332/1*la7_YvDFvrtA720P5bYWBQ@2x.png" alt="drawing" width="100"/></a>
 
 </div>
 

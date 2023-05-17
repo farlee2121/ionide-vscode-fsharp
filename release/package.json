@@ -6,7 +6,9 @@
   },
   "activationEvents": [
     "onCommand:workbench.action.tasks.runTask",
+    "onDebugInitialConfigurations:coreclr",
     "onDebugDynamicConfigurations:coreclr",
+    "onDebugResolve:coreclr",
     "workspaceContains:**/*.fs",
     "workspaceContains:**/*.fsproj",
     "workspaceContains:**/*.fsx",
@@ -826,12 +828,6 @@
       "title": "F#",
       "type": "object"
     },
-    "debuggers": [
-      {
-        "label": "Ionide LaunchSettings",
-        "type": "coreclr"
-      }
-    ],
     "grammars": [
       {
         "language": "fsharp",
@@ -1662,5 +1658,5 @@
     "type": "git",
     "url": "https://github.com/ionide/ionide-vscode-fsharp.git"
   },
-  "version": "7.5.3"
+  "version": "7.5.4"
 }

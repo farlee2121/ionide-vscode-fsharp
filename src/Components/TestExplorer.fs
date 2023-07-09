@@ -353,6 +353,7 @@ module DotnetCli =
         (targetFramework: string)
         (trxOutputPath: string option)
         (additionalArgs: string array)
+        (cancellationToken: CancellationToken)
         : JS.Promise<Node.ChildProcess.ExecError option * StandardOutput * StandardError> =
 
         let args =
@@ -367,16 +368,17 @@ module DotnetCli =
         let argString = String.Join(" ", args)
         logger.Debug($"Running `dotnet {argString}`")
 
-        Process.exec "dotnet" (ResizeArray(args))
+        Process.execWithCancel "dotnet" (ResizeArray(args)) cancellationToken
 
     type TrxPath = string
     type ConsoleOutput = string
 
-    let test
+    let testWithCancel
         (projectPath: string)
         (targetFramework: string)
         (trxOutputPath: string option)
         (filterExpression: string option)
+        (cancellationToken: CancellationToken)
         : JS.Promise<ConsoleOutput> =
         promise {
             // https://docs.microsoft.com/en-us/dotnet/core/tools/dotnet-test#filter-option-details
@@ -390,12 +392,21 @@ module DotnetCli =
                 logger.Debug("Filter", filter)
 
             let! _, stdOutput, stdError =
-                dotnetTest projectPath targetFramework trxOutputPath [| "--no-build"; yield! filter |]
+                dotnetTest projectPath targetFramework trxOutputPath [| "--no-build"; yield! filter |] cancellationToken
 
             logger.Debug("Test run exitCode", stdError)
 
             return (stdOutput + stdError)
         }
+
+    let test
+        (projectPath: string)
+        (targetFramework: string)
+        (trxOutputPath: string option)
+        (filterExpression: string option)
+        : JS.Promise<ConsoleOutput> =
+        let ct = vscode.CancellationTokenSource.Create().token
+        testWithCancel projectPath targetFramework trxOutputPath filterExpression ct
 
     let listTests projectPath targetFramework (shouldBuild: bool) =
         let splitLines (str: string) =
@@ -404,8 +415,10 @@ module DotnetCli =
         promise {
             let additionalArgs = if not shouldBuild then [| "--no-build" |] else Array.empty
 
+            let ct = vscode.CancellationTokenSource.Create().token
+
             let! _, stdOutput, _ =
-                dotnetTest projectPath targetFramework None [| "--list-tests"; yield! additionalArgs |]
+                dotnetTest projectPath targetFramework None [| "--list-tests"; yield! additionalArgs |] ct
 
             let testNames =
                 stdOutput
@@ -1082,7 +1095,13 @@ module Interactions =
             }
             |> (Promise.toThenable >> (!^))
 
-    let refreshTestList testItemFactory (rootTestCollection: TestItemCollection) tryGetLocation makeTrxPath =
+    let refreshTestList
+        testItemFactory
+        (rootTestCollection: TestItemCollection)
+        tryGetLocation
+        makeTrxPath
+        (cancellationToken: CancellationToken)
+        =
         withProgress
         <| fun p _ ->
             promise {
@@ -1281,6 +1300,7 @@ let activate (context: ExtensionContext) =
     |> unbox
     |> context.subscriptions.Add
 
+
     //    testController.createRunProfile ("Debug F# Tests", TestRunProfileKind.Debug, runHandler testController, true)
     //    |> unbox
     //    |> context.subscriptions.Add
@@ -1301,8 +1321,13 @@ let activate (context: ExtensionContext) =
     |> context.subscriptions.Add
 
 
-    let refreshHandler cancellationToken =
-        Interactions.refreshTestList testItemFactory testController.items locationCache.GetById makeTrxPath
+    let refreshHandler (cancellationToken: CancellationToken) =
+        Interactions.refreshTestList
+            testItemFactory
+            testController.items
+            locationCache.GetById
+            makeTrxPath
+            cancellationToken
         |> Promise.toThenable
         |> (!^)
 
@@ -1322,7 +1347,14 @@ let activate (context: ExtensionContext) =
             initialTests |> Array.iter testController.items.add
 
             // NOTE: Trx results can be partial if the last test run was filtered, so also queue a refresh to make sure we discover all tests
-            Interactions.refreshTestList testItemFactory testController.items locationCache.GetById makeTrxPath
+            let cancelToken = vscode.CancellationTokenSource.Create().token
+
+            Interactions.refreshTestList
+                testItemFactory
+                testController.items
+                locationCache.GetById
+                makeTrxPath
+                cancelToken
             |> Promise.start
 
         None)

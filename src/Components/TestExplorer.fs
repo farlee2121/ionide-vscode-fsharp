@@ -89,7 +89,6 @@ module FullTestName =
     let inline ofString str = str
 
 module TestName =
-    let pathSeparator = '.'
 
     type Segment =
         { Text: string
@@ -110,6 +109,12 @@ module TestName =
             { Text = m.Groups[2].Value
               SeparatorBefore = m.Groups[1].Value })
 
+    let segmentsFromClassPathAndTestName (fullClassName: string) (testName: string) =
+        List.append
+            (splitSegments fullClassName)
+            [ { Text = testName
+                SeparatorBefore = "." } ]
+
     let appendSegment (parentPath: FullTestName) (segment: Segment) : FullTestName =
         $"{parentPath}{segment.SeparatorBefore}{segment.Text}"
 
@@ -128,11 +133,22 @@ module TestName =
           Name: string
           Children: NameHierarchy<'t> array }
 
-    let inferHierarchy (namedData: {| FullName: string; Data: 't |} array) : NameHierarchy<'t> array =
 
-        let withRelativePath (named: {| FullName: string; Data: 't |}) =
+    let inferHierarchy
+        (namedData:
+            {| ClassName: string
+               TestName: string
+               Data: 't |} array)
+        : NameHierarchy<'t> array =
+
+        let withRelativePath
+            (named:
+                {| ClassName: string
+                   TestName: string
+                   Data: 't |})
+            =
             { data = named.Data
-              relativePath = splitSegments named.FullName }
+              relativePath = segmentsFromClassPathAndTestName named.ClassName named.TestName }
 
         let popTopPath data =
             { data with
@@ -190,7 +206,8 @@ type TestResultOutcome =
     | Passed
 
 type TestResult =
-    { FullTestName: string
+    { ClassName: string
+      TestName: string
       Outcome: TestResultOutcome
       ErrorMessage: string option
       ErrorStackTrace: string option
@@ -198,17 +215,19 @@ type TestResult =
       Actual: string option
       Timing: float }
 
+    member this.FullTestName = TestName.fromPathAndTestName this.ClassName this.TestName
+
+
 type TrxTestDef =
     { ExecutionId: string
       TestName: string
       ClassName: string }
 
-    member self.FullName = TestName.fromPathAndTestName self.ClassName self.TestName
-
 
 type TrxTestResult =
     { ExecutionId: string
-      FullTestName: string
+      ClassName: string
+      TestName: string
       Outcome: string
       ErrorMessage: string option
       ErrorStackTrace: string option
@@ -315,7 +334,8 @@ module TrxParser =
             if success then ts else TimeSpan.Zero
 
         { ExecutionId = executionId
-          FullTestName = TestName.fromPathAndTestName className testName
+          ClassName = className
+          TestName = testName
           Outcome = outcome
           ErrorMessage = errorInfoMessage
           ErrorStackTrace = errorStackTrace
@@ -333,7 +353,10 @@ module TrxParser =
 
     let inferHierarchy (testDefs: TrxTestDef array) : TestName.NameHierarchy<TrxTestDef> array =
         testDefs
-        |> Array.map (fun td -> {| FullName = td.FullName; Data = td |})
+        |> Array.map (fun td ->
+            {| ClassName = td.ClassName
+               TestName = td.TestName
+               Data = td |})
         |> TestName.inferHierarchy
 
 
@@ -604,7 +627,8 @@ module TestItem =
         (tryGetLocation: TestId -> LocationRecord option)
         (projectPath: ProjectPath)
         (targetFramework: TargetFramework)
-        (fullTestName: FullTestName)
+        (className: string)
+        (testName: string)
         =
         let rec recurse
             (collection: TestItemCollection)
@@ -647,7 +671,7 @@ module TestItem =
 
         let projectRoot = getOrMakeProjectRoot projectPath targetFramework
 
-        let pathSegments = TestName.splitSegments fullTestName
+        let pathSegments = TestName.segmentsFromClassPathAndTestName className testName
         recurse projectRoot.children "" pathSegments
 
 
@@ -922,9 +946,9 @@ module Interactions =
         missing |> Array.iter tryRemove
 
         added
-        |> Array.iter (fun additionalResult ->
-            let treeItem = getOrMakeHierarchyPath additionalResult.FullTestName
-            displayTestResultInExplorer testRun (treeItem, additionalResult))
+        |> Array.iter (fun addedTest ->
+            let treeItem = getOrMakeHierarchyPath addedTest.ClassName addedTest.TestName
+            displayTestResultInExplorer testRun (treeItem, addedTest))
 
     let private trxResultToTestResult (trxResult: TrxTestResult) =
         // Q: can I get these parameters down to just trxResult?
@@ -942,7 +966,8 @@ module Interactions =
 
                 tryFind "Expected:", tryFind "But was:"
 
-        { FullTestName = trxResult.FullTestName
+        { ClassName = trxResult.ClassName
+          TestName = trxResult.TestName
           Outcome = !!trxResult.Outcome
           ErrorMessage = trxResult.ErrorMessage
           ErrorStackTrace = trxResult.ErrorStackTrace
@@ -1134,47 +1159,11 @@ module Interactions =
                     logger.Error(message, buildFailures |> List.map ProjectPath.fromProject)
 
                 else
-                    let librariesCapableOfListOnlyDiscovery = set [ "Expecto"; "xunit.abstractions" ]
-
-                    let listDiscoveryProjects, trxDiscoveryProjects =
-                        builtTestProjects
-                        |> List.partition (fun project ->
-                            project.PackageReferences
-                            |> Array.exists (fun pr -> librariesCapableOfListOnlyDiscovery |> Set.contains pr.Name))
-
-                    let discoverTestsByListOnly (project: Project) =
-                        promise {
-                            report $"Discovering tests for {project.Project}"
-
-                            let! testNames = DotnetCli.listTests project.Project project.Info.TargetFramework false
-
-                            let testHierarchy =
-                                testNames
-                                |> Array.map (fun n -> {| FullName = n; Data = () |})
-                                |> TestName.inferHierarchy
-                                |> Array.map (
-                                    TestItem.fromNamedHierarchy testItemFactory tryGetLocation project.Project
-                                )
-
-                            return
-                                TestItem.fromProject
-                                    testItemFactory
-                                    project.Project
-                                    project.Info.TargetFramework
-                                    testHierarchy
-                        }
-
-
-                    let! listDiscoveredPerProject =
-                        listDiscoveryProjects
-                        |> ListExt.mapKeepInputAsync discoverTestsByListOnly
-                        |> Promise.all
-
-                    trxDiscoveryProjects
+                    builtTestProjects
                     |> List.iter (ProjectPath.fromProject >> makeTrxPath >> Path.deleteIfExists)
 
                     let! _ =
-                        trxDiscoveryProjects
+                        builtTestProjects
                         |> Promise.executeWithMaxParallel 2 (fun project ->
                             let projectPath = project.Project
                             report $"Discovering tests for {projectPath}"
@@ -1182,10 +1171,9 @@ module Interactions =
                             DotnetCli.test projectPath project.Info.TargetFramework trxPath None)
 
                     let trxDiscoveredTests =
-                        TestDiscovery.discoverFromTrx testItemFactory tryGetLocation makeTrxPath trxDiscoveryProjects
+                        TestDiscovery.discoverFromTrx testItemFactory tryGetLocation makeTrxPath builtTestProjects
 
-                    let listDiscoveredTests = listDiscoveredPerProject |> Array.map snd
-                    let newTests = Array.concat [ listDiscoveredTests; trxDiscoveredTests ]
+                    let newTests = trxDiscoveredTests
 
                     report $"Discovered {newTests |> Array.sumBy (TestItem.runnableItems >> Array.length)} tests"
                     rootTestCollection.replace (newTests |> ResizeArray)
@@ -1199,17 +1187,10 @@ module Interactions =
 
                     else
                         let possibleDiscoveryFailures =
-                            Array.concat
-                                [ let getProjectTests (ti: TestItem) = ti.children.TestItems()
-
-                                  listDiscoveredPerProject
-                                  |> Array.filter (snd >> getProjectTests >> Array.isEmpty)
-                                  |> Array.map (fst >> ProjectPath.fromProject)
-
-                                  trxDiscoveryProjects
-                                  |> Array.ofList
-                                  |> Array.map ProjectPath.fromProject
-                                  |> Array.filter (makeTrxPath >> Path.tryPath >> Option.isNone) ]
+                            builtTestProjects
+                            |> Array.ofList
+                            |> Array.map ProjectPath.fromProject
+                            |> Array.filter (makeTrxPath >> Path.tryPath >> Option.isNone)
 
                         if (not << Array.isEmpty) possibleDiscoveryFailures then
                             let projectList = String.Join("\n", possibleDiscoveryFailures)

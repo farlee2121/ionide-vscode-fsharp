@@ -94,6 +94,9 @@ module LanguageService =
             { start: Fable.Import.VSCode.Vscode.Position
               ``end``: Fable.Import.VSCode.Vscode.Position }
 
+        type TestDiscoveryRequest =
+            { LimitToProjects: string array option }
+
         type TestRunRequest =
             { LimitToProjects: string array option
               TestCaseFilter: string option
@@ -600,7 +603,7 @@ Consider:
     let fsiSdk () =
         promise { return Environment.configFsiSdkFilePath () }
 
-    let discoverTests onDiscoveryProgress () =
+    let discoverTests onDiscoveryProgress (projectSubset: string array option) =
         match client with
         | None -> Promise.empty
         | Some cl ->
@@ -611,7 +614,9 @@ Consider:
                     onDiscoveryProgress parsed)
             )
 
-            cl.sendRequest ("test/discoverTests", ())
+            let request: Types.TestDiscoveryRequest = { LimitToProjects = projectSubset }
+
+            cl.sendRequest ("test/discoverTests", request)
             |> Promise.map (fun (res: Types.PlainNotification) -> res.content |> ofJson<DiscoverTestsResult>)
 
     type ProcessId = int

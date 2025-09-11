@@ -1704,6 +1704,7 @@ module Interactions =
         testItemFactory
         (rootTestCollection: TestItemCollection)
         tryGetLocation
+        projectSubset
         =
         withProgress NoCancel
         <| fun p progressCancelToken ->
@@ -1731,6 +1732,21 @@ module Interactions =
 
                     recurse target addition
 
+                let updateExplorer (newTests: TestItem array) =
+                    match projectSubset with
+                    | None -> rootTestCollection.replace (ResizeArray newTests)
+                    | Some _ ->
+                        let updatedProjects = newTests |> Array.map TestItem.getId |> set
+                        let existingTests = rootTestCollection.TestItems()
+
+                        let updatedTestList =
+                            let existingWithoutUpdatedRootItems =
+                                existingTests |> Array.filter (TestItem.getId >> updatedProjects.Contains)
+
+                            Array.append newTests existingWithoutUpdatedRootItems
+
+                        rootTestCollection.replace (ResizeArray updatedTestList)
+
                 let mutable discoveredTestsAccumulator: TestItem array =
                     rootTestCollection.TestItems()
 
@@ -1755,19 +1771,17 @@ module Interactions =
                         discoveredTestCount <- discoveredTestCount + (discoveryUpdate.Tests |> Array.length)
 
                         report $"Discovering tests: {discoveredTestCount} discovered"
-                        rootTestCollection.replace (ResizeArray discoveredTestsAccumulator)
+                        updateExplorer discoveredTestsAccumulator
                     with e ->
                         logger.Debug("Incremental test discovery update threw an exception", e)
 
                 report "Discovering tests"
-                let! discoveryResponse = LanguageService.discoverTests onTestDiscoveryProgress ()
+                let! discoveryResponse = LanguageService.discoverTests onTestDiscoveryProgress projectSubset
 
                 let testItems =
-                    discoveryResponse.Data
-                    |> TestItem.ofTestDTOs testItemFactory tryGetLocation
-                    |> ResizeArray
+                    discoveryResponse.Data |> TestItem.ofTestDTOs testItemFactory tryGetLocation
 
-                rootTestCollection.replace (testItems)
+                updateExplorer testItems
 
                 if testItems |> Seq.length = 0 then
                     window.showWarningMessage (
@@ -1960,7 +1974,38 @@ module Interactions =
 
                     ()
                 else
-                    do! runTests_WithLanguageServer mergeTestResultsToExplorer testController.items req testRun
+                    let startTime = DateTime.Now
+
+                    let projectSubset =
+                        req.``include``
+                        |> Option.map (fun selectedTests ->
+                            selectedTests
+                            |> Seq.map (TestItem.getId >> TestItem.getProjectPath)
+                            |> Seq.distinct
+                            |> Array.ofSeq)
+
+                    // do!
+                    //     discoverTests_WithLangaugeServer
+                    //         testItemFactory
+                    //         testController.items
+                    //         tryGetLocation
+                    //         projectSubset
+
+                    // do! runTests_WithLanguageServer mergeTestResultsToExplorer testController.items req testRun
+                    do!
+                        (Promise.Parallel(
+                            [| discoverTests_WithLangaugeServer
+                                   testItemFactory
+                                   testController.items
+                                   tryGetLocation
+                                   projectSubset
+                               runTests_WithLanguageServer mergeTestResultsToExplorer testController.items req testRun |]
+                         )
+                         |> Promise.map ignore)
+
+                    let endTime = DateTime.Now
+                    let elapsed = endTime - startTime
+                    logger.Debug($"Nya: test run time elapsed {elapsed.TotalMilliseconds}")
 
                 testRun.``end`` ()
             }
@@ -2116,7 +2161,7 @@ module Interactions =
                             cancellationToken
                             builtTestProjects
                 else
-                    do! discoverTests_WithLangaugeServer testItemFactory rootTestCollection tryGetLocation
+                    do! discoverTests_WithLangaugeServer testItemFactory rootTestCollection tryGetLocation None
             }
 
     let tryMatchTestBySuffix (locationCache: CodeLocationCache) (testId: TestId) =

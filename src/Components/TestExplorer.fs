@@ -835,13 +835,7 @@ module TestItem =
             if testItem.children.size = 0. then
                 [| testItem |]
             else
-                let runnableBelow = testItem.children.TestItems() |> Array.collect visit
-
-                // A test FSAC reported can hold tests of its own, and runs alongside them.
-                if Option.isSome testItem.ServerId then
-                    Array.append [| testItem |] runnableBelow
-                else
-                    runnableBelow
+                testItem.children.TestItems() |> Array.collect visit
 
         visit root
 

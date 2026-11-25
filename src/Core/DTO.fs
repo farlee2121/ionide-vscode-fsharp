@@ -460,7 +460,7 @@ module DTO =
             /// The `Id` of the node one level up, or `None` at the root of a project.
             ParentId: string option
             /// A runnable test. `false` marks a grouping node.
-            IsLeaf: bool
+            IsRunnable: bool
             FullName: string
             DisplayName: string
             /// Identifies the test adapter that ran the tests

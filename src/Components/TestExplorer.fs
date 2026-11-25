@@ -241,6 +241,7 @@ type TestItem with
     /// results. `None` for a grouping node, whose id FSAC would not run, and for a test FSAC did
     /// not report, such as one found only in code.
     member this.ServerId: string option = this?serverId |> Option.ofObj
+    member this.IsRunnable: bool option = this?isRunnable
 
 [<RequireQualifiedAccess; StringEnum(CaseRules.None)>]
 type TestResultOutcome =
@@ -835,7 +836,10 @@ module TestItem =
             if testItem.children.size = 0. then
                 [| testItem |]
             else
-                testItem.children.TestItems() |> Array.collect visit
+                let runnableChildren = testItem.children.TestItems() |> Array.collect visit
+                if testItem.IsRunnable = Some true 
+                then [| testItem; yield! runnableChildren |]
+                else runnableChildren
 
         visit root
 
@@ -894,6 +898,7 @@ module TestItem =
             testFramework: TestFrameworkId option
             /// The `Id` FSAC reported for the test, if FSAC reported it and it is not a grouping.
             serverId: string option
+            isRunnable: bool option
         }
 
     type TestItemFactory = TestItemBuilder -> TestItem
@@ -914,6 +919,10 @@ module TestItem =
 
             match builder.serverId with
             | Some id -> testItem?serverId <- id
+            | None -> ()
+
+            match builder.isRunnable with
+            | Some id -> testItem?isRunnable <- id
             | None -> ()
 
             testItem
@@ -940,6 +949,7 @@ module TestItem =
                     children = namedNode.Children |> Array.map recurse
                     testFramework = None
                     serverId = None
+                    isRunnable =  namedNode.Children.Length = 0 |> Some
                 }
 
         recurse hierarchy
@@ -979,6 +989,7 @@ module TestItem =
                         children = t.childs |> Array.map (fun n -> recurse fullName (Some t.moduleType) n)
                         testFramework = t?``type``
                         serverId = None
+                        isRunnable = t.childs.Length = 0 |> Some
                     }
 
             ti
@@ -1000,6 +1011,7 @@ module TestItem =
                 children = children
                 testFramework = None
                 serverId = None
+                isRunnable = Some false 
             }
 
 
@@ -1056,6 +1068,7 @@ module TestItem =
                             namedNode.Data
                             |> Option.bind (fun t -> t.ExecutorUri |> TestFrameworkId.tryFromExecutorUri)
                         serverId = namedNode.Data |> Option.map (fun dto -> dto.Id)
+                        isRunnable = namedNode.Data |> Option.map _.IsRunnable
                     }
 
             recurse hierarchy
@@ -1187,6 +1200,7 @@ module TestItem =
                             children = [||]
                             testFramework = None
                             serverId = None
+                            isRunnable = None
                         }
 
             collection.add (testItem)
@@ -1274,6 +1288,7 @@ module TestDiscovery =
                         children = target.children.TestItems()
                         testFramework = withUri?testFramework
                         serverId = target.ServerId
+                        isRunnable = target.IsRunnable
                     }
 
             (replacementItem, withUri)
